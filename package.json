@@ -1,0 +1,11 @@
+{
+  "name": "undersleep",
+  "version": "1.0.0",
+  "description": "it is still open.",
+  "license": "MIT",
+  "repository": "github:gavingimmestad/undersleep",
+  "bin": { "undersleep": "undersleep.js" },
+  "files": ["undersleep.js"],
+  "engines": { "node": ">=18" },
+  "scripts": { "start": "node undersleep.js", "test": "node --test" }
+}
