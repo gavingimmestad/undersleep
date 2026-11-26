@@ -2,7 +2,7 @@
 'use strict';
 const fs = require('fs'), os = require('os'), path = require('path');
 
-const HZ = 30, TAU = Math.PI * 2, LAST = 6;
+const HZ = 30, TAU = Math.PI * 2, LAST = 8;
 const { sin: S, cos: C, abs, min, max, hypot, floor, pow, atan2, exp } = Math;
 const wrap = n => ((n % 1) + 1) % 1;
 const gap = (a, b) => abs(wrap(a - b + 0.5) - 0.5); // distance on a torus
@@ -11,7 +11,8 @@ const pick = a => a[floor(Math.random() * a.length)];
 // ---------------------------------------------------------------- what it says
 
 const ARRIVE = ['', 'further.', 'you have been here longer than you think.', 'count your hands.',
-  'it likes how you move.', 'they are all looking at the same thing.', 'there is nothing below this.'];
+  'it likes how you move.', 'they are all looking at the same thing.', 'there are more of you in here.',
+  'every step is the same step.', 'there is nothing below this.'];
 const KEPT = ['again.', 'it kept that one.', 'you left a little of yourself.', 'that was one of the good ones.',
   'do you hear how quiet it got.', 'the next one will be braver.', 'it is wearing you.'];
 const TITLES = ['undersleep', 'do not turn around', 'it is open', 'who is moving your hands', 'still', 'it can hear the keys'];
@@ -225,13 +226,31 @@ const PLACES = [
     v = abs(ly) < lid ? (d < 0.045 ? -1 : d < 0.11 ? 0.95 : 0.35) : abs(abs(ly) - lid) < 0.03 && abs(lx) < 0.28 ? 0.6 : S(r * 20 - t * 2 + id) * 0.18;
     h = 0.12 + id * 0.5 + t * 0.05 + d;
   },
+  (x, y, t) => { // hall of mirrors
+    const c = C(0.62 + 0.12 * S(t * 0.21)), s = S(0.62 + 0.12 * S(t * 0.21));
+    let p = x, q = y;
+    for (let k = 0; k < 4; k++) { // fold the room into itself, turned a little each time
+      p = abs(p) - 0.34 - 0.07 * S(t * 0.4 + k); q = abs(q) - 0.24;
+      const np = p * c - q * s; q = p * s + q * c; p = np;
+    }
+    const d = hypot(p, q);
+    v = S(d * 22 - t * 2.4) * C(atan2(q, p) * 3 + t * 0.9) * 1.25;
+    h = 0.55 + d * 1.4 + t * 0.07;
+  },
+  (x, y, t, r, a) => { // the stair
+    const z = Math.log(r + 1e-3), arm = pow(abs(S(a * 2 - z * 4.5 + t * 1.3)), 4);
+    v = (arm * 0.85 + arm * pow(max(0, S(z * 14 + t * 3)), 8) * 0.9) * min(1, r * 2.5);
+    h = 0.08 - z * 0.12 + 0.05 * S(t * 0.3 + a);
+  },
   (x, y, t, r, a) => { // the bottom
     v = (Math.random() < 0.06 ? 0.5 : 0) + 0.3 * S(r * 9 - t * 0.7 + S(a * 2 + t * 0.1));
     h = 0.5;
   },
 ];
-const TINT = [[0.9, 0.5, 1], [0.75, 1, 0.8], [1, 0.8, 1], [1, 0.4, 0.75], [1, 0.45, 0.6], [1, 0.95, 0.6], [0.5, 0.52, 0.6]];
-const RAMP = [' .,:;i1tfLCG08@', ' .`\'~-=+*oaO%&$', ' .\':;+*x%X#$&@', ' .|/\\-=+xX%#', ' .,:;coeaOQ8@', ' .-~:=oO0Q@', ' .\'`,:;'];
+const TINT = [[0.9, 0.5, 1], [0.75, 1, 0.8], [1, 0.8, 1], [1, 0.4, 0.75], [1, 0.45, 0.6], [1, 0.95, 0.6],
+  [0.6, 0.9, 1], [1, 0.7, 0.35], [0.5, 0.52, 0.6]];
+const RAMP = [' .,:;i1tfLCG08@', ' .`\'~-=+*oaO%&$', ' .\':;+*x%X#$&@', ' .|/\\-=+xX%#', ' .,:;coeaOQ8@', ' .-~:=oO0Q@',
+  ' .:-=+*#%@', ' ._-~=/|#N', ' .\'`,:;'];
 
 // ---------------------------------------------------------------- the light
 
