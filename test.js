@@ -133,6 +133,32 @@ test('the heart races as you close in on yourself, and settles when you are alon
   assert.ok(w.dread < 0.02, `dread ${w.dread}`);
 });
 
+test('waking up, you remember how deep you went and who stayed', () => {
+  const plain = s => s.replace(/\x1b\[[0-9;]*m/g, '');
+  const idle = world();
+  assert.ok(!plain(U.dreamLog(idle)).includes('\n'), 'nothing to remember from the title');
+
+  const w = world();
+  U.enter(w, 2);
+  run(w, U.HZ * 5);                                  // stood still: it arrived
+  assert.strictEqual(w.mode, 'dead');
+  w.run.caught = 3;
+  const log = plain(U.dreamLog(w)).split('\n').map(l => l.trim());
+  assert.deepStrictEqual(log.slice(1), ['you went two down.', 'one of you stayed there.',
+    'it caught you moving three times.', 'you were gone 5 seconds.']);
+  w.t = U.HZ * 150;
+  assert.ok(U.dreamLog(w).includes('you were gone 2 minutes.'));
+});
+
+test('being seen moving counts once per stare', () => {
+  const w = world();
+  U.enter(w, 1);
+  w.look = 2; w.lookT = U.HZ; w.lights = [{ x: 0.01, y: 0.01 }];
+  U.press(w, 'd');
+  run(w, 20);
+  assert.strictEqual(w.run.caught, 1);
+});
+
 test('a damaged memory is not fatal', () => {
   for (const bad of ['', '{', 'null', '[]', '{"graves":[[9,9],"x",null,[0.5,0.5]]}', '{"visits":"x"}']) {
     const s = U.recall(bad);

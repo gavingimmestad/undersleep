@@ -23,7 +23,7 @@ const OUT = ['it is still open.', 'you brought some with you.', 'it saw where yo
 function newWorld(save) {
   return { mode: 'title', t: 0, depth: 0, W: 80, H: 24, x: 0.5, y: 0.8, dx: 0, dy: 0, tick: 0, path: [], lights: [],
     echoes: [], haste: 1, open: 0, look: 0, lookT: 0, hole: false, seen: 0, said: {}, say: null, save, quit: false,
-    mouse: null, goal: null, dread: 0, beat: 0 };
+    mouse: null, goal: null, dread: 0, beat: 0, run: { played: false, deepest: 0, stayed: 0, caught: 0 }, caught: false };
 }
 
 function whisper(w, text, key) {
@@ -34,6 +34,8 @@ function whisper(w, text, key) {
 function enter(w, depth) {
   Object.assign(w, { mode: 'play', depth, tick: 0, x: 0.5, y: 0.82, dx: 0, dy: 0, path: [], lights: [], echoes: [],
     haste: 1, look: 0, lookT: HZ * 3, hole: false, seen: 0, goal: null });
+  w.run.played = true;
+  w.run.deepest = max(w.run.deepest, depth);
   if (depth < LAST) {
     while (w.lights.length < 4 + depth) {
       const l = { x: 0.06 + Math.random() * 0.88, y: 0.1 + Math.random() * 0.8 };
@@ -122,6 +124,7 @@ function step(w) {
     if (--w.lookT <= 0) {
       w.look = (w.look + 1) % 3;
       w.lookT = HZ * [2.5 + Math.random() * 3, 1, 1.5][w.look];
+      w.caught = false;
       if (w.look === 1) whisper(w, 'when it looks, be still.', 'look');
     }
     const staring = w.look === 2 && w.lookT < HZ * 1.15;
@@ -129,6 +132,7 @@ function step(w) {
       w.haste = max(0, w.haste - 0.012);
       w.seen = min(1, w.seen + 0.12);
       whisper(w, 'it learned something.', 'learned');
+      if (!w.caught) { w.caught = true; w.run.caught++; }
     }
   }
 
@@ -148,6 +152,7 @@ function step(w) {
       w.mode = 'end'; w.tick = 0; w.say = null; w.save.done = true;
     } else {
       w.mode = 'dead'; w.wait = HZ * 2.6; w.say = null;
+      w.run.stayed++;
       w.save.graves.push([w.x, w.y]);
       if (w.save.graves.length > 200) w.save.graves.shift();
       whisper(w, pick(KEPT));
@@ -420,6 +425,19 @@ function paint(s, deep) {
   return out + '\x1b[?2026l';
 }
 
+// what you wake up remembering
+function dreamLog(w) {
+  const { played, deepest, stayed, caught } = w.run, secs = floor(w.t / HZ), word = n => ['no', 'one', 'two', 'three'][n] || n;
+  const lines = [pick(OUT)];
+  if (!played) return lines[0];
+  lines.push(w.save.done && w.mode === 'end' ? 'you went all the way down. you are still there.'
+    : deepest ? `you went ${word(deepest)} down.` : 'you never went down.');
+  if (stayed) lines.push(stayed === 1 ? 'one of you stayed there.' : `${word(stayed)} of you stayed there.`);
+  if (caught) lines.push(`it caught you moving ${caught === 1 ? 'once' : word(caught) + ' times'}.`);
+  lines.push(secs < 60 ? `you were gone ${secs} seconds.` : `you were gone ${floor(secs / 60)} minute${secs < 120 ? '' : 's'}.`);
+  return lines[0] + lines.slice(1).map(l => `\n\x1b[2m  ${l}\x1b[0m`).join('');
+}
+
 // ---------------------------------------------------------------- what it keeps
 
 const FILE = path.join(os.homedir(), '.undersleep.json');
@@ -452,7 +470,7 @@ function main() {
     stdout.write('\x1b[2J');
   };
   stdout.write('\x1b[22;0t\x1b[?1049h\x1b[?25l\x1b[?7l\x1b[?1003h\x1b[?1006h');
-  process.on('exit', () => stdout.write(`\x1b[?1006l\x1b[?1003l\x1b[0m\x1b[?7h\x1b[?25h\x1b[?1049l\x1b]0;\x07\x1b[23;0t${w.quit ? pick(OUT) + '\n' : ''}`));
+  process.on('exit', () => stdout.write(`\x1b[?1006l\x1b[?1003l\x1b[0m\x1b[?7h\x1b[?25h\x1b[?1049l\x1b]0;\x07\x1b[23;0t${w.quit ? dreamLog(w) + '\n' : ''}`));
   for (const sig of ['SIGTERM', 'SIGHUP', 'SIGINT']) process.on(sig, () => process.exit(0));
   stdin.setRawMode(true);
   stdin.setEncoding('utf8');
@@ -483,4 +501,4 @@ function main() {
 }
 
 if (require.main === module) main();
-else module.exports = { newWorld, enter, step, press, frame, paint, newScreen, recall, echoAt, HZ, LAST };
+else module.exports = { newWorld, enter, step, press, frame, paint, newScreen, recall, echoAt, dreamLog, HZ, LAST };
