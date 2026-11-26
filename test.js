@@ -114,6 +114,25 @@ test('the pointer: drags, wheels and releases only look; the other button is sti
   assert.ok(!t.quit, 'a mouse report is not an escape');
 });
 
+test('the heart races as you close in on yourself, and settles when you are alone', () => {
+  const w = world();
+  U.enter(w, 1);
+  w.lights = [{ x: 0.01, y: 0.01 }]; w.lookT = 1e9;
+  w.tick = 100; w.path = Array(100).fill([w.x + 0.06, w.y]);   // where you were, a few cells off
+  w.echoes = [{ delay: 50, born: -1e9 }];                     // stays on that old trail for 50 ticks
+  const calm = w.beat;
+  const s = U.newScreen(80, 24);
+  for (let i = 0; i < 40; i++) { U.step(w); U.frame(w, s); }   // the tear and the flush render
+  assert.strictEqual(w.mode, 'play');
+  assert.ok(w.dread > 0.5, `dread ${w.dread}`);
+  assert.ok(w.said.heart, 'it said so');
+  assert.ok(w.beat - calm > 40 / U.HZ * 1.1 * 1.3, 'well above a resting heart');
+  assert.ok(!/NaN|undefined/.test(U.paint(s, true)));
+  w.echoes = [];
+  run(w, U.HZ * 3);
+  assert.ok(w.dread < 0.02, `dread ${w.dread}`);
+});
+
 test('a damaged memory is not fatal', () => {
   for (const bad of ['', '{', 'null', '[]', '{"graves":[[9,9],"x",null,[0.5,0.5]]}', '{"visits":"x"}']) {
     const s = U.recall(bad);

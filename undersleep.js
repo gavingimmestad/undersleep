@@ -22,7 +22,7 @@ const OUT = ['it is still open.', 'you brought some with you.', 'it saw where yo
 function newWorld(save) {
   return { mode: 'title', t: 0, depth: 0, W: 80, H: 24, x: 0.5, y: 0.8, dx: 0, dy: 0, tick: 0, path: [], lights: [],
     echoes: [], haste: 1, open: 0, look: 0, lookT: 0, hole: false, seen: 0, said: {}, say: null, save, quit: false,
-    mouse: null, goal: null };
+    mouse: null, goal: null, dread: 0, beat: 0 };
 }
 
 function whisper(w, text, key) {
@@ -58,9 +58,23 @@ function echoAt(w, e) {
 const touching = (w, o, k) =>
   gap(w.x, o.x) * w.W < max(1.3, w.W / 70) * k && gap(w.y, o.y) * w.H < max(0.9, w.W / 140) * k;
 
+// how close the nearest of you is, as a heart rate: 66 at rest, 150 when it is right there
+function listen(w) {
+  let near = Infinity;
+  if (w.mode === 'play') for (const e of w.echoes) {
+    const p = echoAt(w, e);
+    if (p && p.solid) near = min(near, hypot(gap(w.x, p.x) * w.W, gap(w.y, p.y) * w.H * 2));
+  }
+  w.dread += (max(0, min(1, 1 - near / (w.W * 0.3))) - w.dread) * 0.08;
+  w.beat += (1.1 + 1.4 * w.dread) / HZ;
+  if (w.dread > 0.6 && w.depth < LAST) whisper(w, 'do you hear that.', 'heart');
+}
+const thump = w => w.dread * (pow(max(0, S(TAU * w.beat)), 12) + 0.6 * pow(max(0, S(TAU * w.beat - 0.9)), 12));
+
 function step(w) {
   w.t++;
   w.seen *= 0.94;
+  listen(w);
   const target = w.mode === 'title' ? 0.62 + 0.2 * S(w.t / 40)
     : w.hole || w.look === 2 || w.mode === 'dead' ? 1 : w.look === 1 ? 0.07 + 0.04 * S(w.t * 1.7) : 0;
   w.open += (target - w.open) * 0.14;
@@ -234,7 +248,8 @@ function frame(w, s) {
   const dead = w.mode === 'dead', fall = w.mode === 'fall', end = w.mode === 'end', title = w.mode === 'title';
   const place = PLACES[d], tint = TINT[d], open = w.open, asp = W / H;
   const px = (w.x - 0.5) * 2 * asp / 2, py = (w.y - 0.5) * 2;
-  const rot = fall ? 0.09 : dead ? -0.03 : 0.03 * S(t * 0.23), zoom = fall ? 0.93 : dead ? 1.05 : 0.975 + 0.03 * S(t * 0.31);
+  const pound = thump(w), fear = w.dread;
+  const rot = fall ? 0.09 : dead ? -0.03 : 0.03 * S(t * 0.23), zoom = (fall ? 0.93 : dead ? 1.05 : 0.975 + 0.03 * S(t * 0.31)) - pound * 0.03;
   const cr = C(rot) * zoom, sr = S(rot) * zoom, keep = dead ? 0.95 : fall ? 0.93 : 0.72, split = 0.03 + 0.035 * S(t * 0.4) + w.seen * 0.05;
   const gain = dead ? 0.02 : end ? 0.14 : fall ? 0.12 : title ? 0.3 : 0.5, hush = 1 - 0.55 * open;
   const hand = w.mouse && w.t - w.mouse.at < HZ * 4 && !w.hole ? w.mouse : null; // a moving pointer outranks you
@@ -262,6 +277,10 @@ function frame(w, s) {
       let cB = B[at(1 - split)] * keep + l * tint[2] * (0.5 + 0.5 * C(TAU * (h + 0.67)));
       if (w.seen > 0.02) { cR += w.seen * 0.05 * Math.random(); cG *= 1 - w.seen * 0.2; cB *= 1 - w.seen * 0.2; }
       if (dead) cR += 0.006;
+      if (fear > 0.02) { // the edges close in and flush with each beat
+        const edge = min(1, r * r * 0.6), dim = 1 - fear * 0.5 * edge;
+        cR = cR * dim + pound * 0.3 * edge; cG *= dim; cB *= dim;
+      }
 
       // it
       if (open > 0.015) {
@@ -310,6 +329,13 @@ function frame(w, s) {
     const k = 1 / (pow(l, 0.45) + 0.08);
     fg[n] = rgb(byte(r * k, 12), byte(g * k, 12), byte(b * k, 12));
     bg[n] = rgb(byte(r * r * 0.3, 10), byte(g * g * 0.3, 10), byte(b * b * 0.3, 10));
+  }
+
+  if (fear > 0.55 && pound > 0.25) for (let j = 0; j < H; j++) { // the picture tears on the beat
+    if (Math.random() > fear * 0.1) continue;
+    const k = j * W, by = 1 + floor(Math.random() * 3) * (Math.random() < 0.5 ? 1 : -1);
+    const row = [ch, fg, bg].map(a => a.slice(k, k + W));
+    for (let i = 0; i < W; i++) { const o = (i + by + W) % W; ch[k + i] = row[0][o]; fg[k + i] = row[1][o]; bg[k + i] = row[2][o]; }
   }
 
   const put = (x, y, c, f, b) => {
@@ -429,7 +455,7 @@ function main() {
     last = now;
     for (; owed >= 1; owed--) step(w);
     if (w.quit) process.exit(0);
-    const want = TITLES[w.mode === 'title' ? 0 : w.look === 2 ? 2 : (w.depth % 5) + 1];
+    const want = w.dread > 0.5 ? 'it is right behind you' : TITLES[w.mode === 'title' ? 0 : w.look === 2 ? 2 : (w.depth % 5) + 1];
     if (want !== name) stdout.write(`\x1b]0;${name = want}\x07`);
     if (stdout.writableNeedDrain) return; // slow terminal: drop the frame, keep the clock
     frame(w, s);
