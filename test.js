@@ -82,6 +82,38 @@ test('taking every light opens the way down, all the way to the bottom', () => {
   assert.ok(w.quit);
 });
 
+test('a click walks you there, the short way round, and stops', () => {
+  const w = world();
+  U.enter(w, 1);
+  w.lights = [{ x: 0.99, y: 0.99 }]; w.lookT = 1e9; w.echoes = [];
+  [w.x, w.y] = [0.5, 0.5];
+  U.press(w, `\x1b[<0;${Math.round(0.8 * w.W)};${Math.round(0.5 * w.H)}M`);
+  assert.ok(w.goal && w.said.hand, 'it noticed the pointer');
+  run(w, U.HZ * 4);
+  assert.ok(!w.goal && w.dx === 0 && w.dy === 0, 'and stood still on arrival');
+  assert.ok(Math.abs(w.x - 0.79) < 0.02, `x=${w.x}`);
+  U.press(w, `\x1b[<0;${Math.round(0.02 * w.W)};${Math.round(0.5 * w.H)}M`);
+  U.step(w);
+  assert.strictEqual(w.dx, 1, 'across the edge is shorter than back through the middle');
+});
+
+test('the pointer: drags, wheels and releases only look; the other button is stillness', () => {
+  const w = world();
+  U.enter(w, 1);
+  for (const k of ['\x1b[<32;5;5M', '\x1b[<64;5;5M', '\x1b[<0;5;5m']) { U.press(w, k); assert.strictEqual(w.goal, null, k); }
+  assert.ok(w.mouse);
+  U.press(w, '\x1b[<0;5;5M');
+  assert.ok(w.goal);
+  U.press(w, '\x1b[<2;5;5M');
+  assert.ok(!w.goal && !w.dx && !w.dy);
+  U.press(w, 'd');
+  assert.strictEqual(w.dx, 1, 'keys still steer');
+  const t = world();
+  U.press(t, '\x1b[<0;1;1M');
+  assert.strictEqual(t.mode, 'play', 'a click starts it');
+  assert.ok(!t.quit, 'a mouse report is not an escape');
+});
+
 test('a damaged memory is not fatal', () => {
   for (const bad of ['', '{', 'null', '[]', '{"graves":[[9,9],"x",null,[0.5,0.5]]}', '{"visits":"x"}']) {
     const s = U.recall(bad);

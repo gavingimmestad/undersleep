@@ -21,7 +21,8 @@ const OUT = ['it is still open.', 'you brought some with you.', 'it saw where yo
 
 function newWorld(save) {
   return { mode: 'title', t: 0, depth: 0, W: 80, H: 24, x: 0.5, y: 0.8, dx: 0, dy: 0, tick: 0, path: [], lights: [],
-    echoes: [], haste: 1, open: 0, look: 0, lookT: 0, hole: false, seen: 0, said: {}, say: null, save, quit: false };
+    echoes: [], haste: 1, open: 0, look: 0, lookT: 0, hole: false, seen: 0, said: {}, say: null, save, quit: false,
+    mouse: null, goal: null };
 }
 
 function whisper(w, text, key) {
@@ -31,7 +32,7 @@ function whisper(w, text, key) {
 
 function enter(w, depth) {
   Object.assign(w, { mode: 'play', depth, tick: 0, x: 0.5, y: 0.82, dx: 0, dy: 0, path: [], lights: [], echoes: [],
-    haste: 1, look: 0, lookT: HZ * 3, hole: false, seen: 0 });
+    haste: 1, look: 0, lookT: HZ * 3, hole: false, seen: 0, goal: null });
   if (depth < LAST) {
     while (w.lights.length < 4 + depth) {
       const l = { x: 0.06 + Math.random() * 0.88, y: 0.1 + Math.random() * 0.8 };
@@ -78,6 +79,11 @@ function step(w) {
     return;
   }
 
+  if (w.goal) { // walking to where you pointed, the short way round, one axis at a time
+    const gx = (wrap(w.goal.x - w.x + 0.5) - 0.5) * w.W, gy = (wrap(w.goal.y - w.y + 0.5) - 0.5) * w.H * 2;
+    if (abs(gx) < 1 && abs(gy) < 1) { w.dx = w.dy = 0; w.goal = null; }
+    else [w.dx, w.dy] = abs(gx) >= abs(gy) ? [Math.sign(gx), 0] : [0, Math.sign(gy)];
+  }
   w.x = wrap(w.x + w.dx * 0.2 / HZ);
   w.y = wrap(w.y + w.dy * 0.2 / HZ * w.W / (2 * w.H));
   w.path.push([w.x, w.y]);
@@ -137,13 +143,27 @@ function step(w) {
 }
 
 const KEYS = { '\x1b[A': [0, -1], '\x1b[B': [0, 1], '\x1b[C': [1, 0], '\x1b[D': [-1, 0], w: [0, -1], s: [0, 1], d: [1, 0], a: [-1, 0] };
+const MOUSE = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/; // SGR mouse report: button;column;row, M down, m up
 function press(w, k) {
+  const m = MOUSE.exec(k);
+  if (m) { point(w, +m[1], +m[2], +m[3], m[4] === 'M'); return; }
   if (k === '\x03' || k === '\x1b' || k === 'q') { w.quit = true; return; }
   if (w.mode === 'title') { enter(w, 0); return; }
   if (w.mode !== 'play') return;
   const dir = KEYS[k.replace('\x1bO', '\x1b[')];
-  if (dir) [w.dx, w.dy] = dir;
-  else if (k === ' ') w.dx = w.dy = 0;
+  if (dir) { [w.dx, w.dy] = dir; w.goal = null; }
+  else if (k === ' ') { w.dx = w.dy = 0; w.goal = null; }
+}
+
+// the pointer is a second hand. it watches that one too.
+function point(w, b, col, row, down) {
+  w.mouse = { x: (min(max(col, 1), w.W) - 0.5) / w.W, y: (min(max(row, 1), w.H) - 0.5) / w.H, at: w.t };
+  if (w.mode === 'play' && w.depth < LAST) whisper(w, 'it sees your other hand.', 'hand');
+  if (!down || b & 96) return; // a drag, a wheel or a let-go is only looking
+  if (w.mode === 'title') { enter(w, 0); return; }
+  if (w.mode !== 'play') return;
+  if ((b & 3) === 2) { w.dx = w.dy = 0; w.goal = null; } // the other button is stillness
+  else if ((b & 3) === 0) w.goal = { x: w.mouse.x, y: w.mouse.y };
 }
 
 // ---------------------------------------------------------------- the places
@@ -217,7 +237,9 @@ function frame(w, s) {
   const rot = fall ? 0.09 : dead ? -0.03 : 0.03 * S(t * 0.23), zoom = fall ? 0.93 : dead ? 1.05 : 0.975 + 0.03 * S(t * 0.31);
   const cr = C(rot) * zoom, sr = S(rot) * zoom, keep = dead ? 0.95 : fall ? 0.93 : 0.72, split = 0.03 + 0.035 * S(t * 0.4) + w.seen * 0.05;
   const gain = dead ? 0.02 : end ? 0.14 : fall ? 0.12 : title ? 0.3 : 0.5, hush = 1 - 0.55 * open;
-  const ix = title ? 0.25 * S(t * 0.5) : w.hole ? 0 : max(-0.3, min(0.3, px * 0.35)), iy = title || w.hole ? 0 : max(-0.12, min(0.12, py * 0.2));
+  const hand = w.mouse && w.t - w.mouse.at < HZ * 4 && !w.hole ? w.mouse : null; // a moving pointer outranks you
+  const fx = hand ? (hand.x - 0.5) * asp : px, fy = hand ? (hand.y - 0.5) * 2 : py, idle = title && !hand;
+  const ix = idle ? 0.25 * S(t * 0.5) : w.hole ? 0 : max(-0.3, min(0.3, fx * 0.35)), iy = idle || w.hole ? 0 : max(-0.12, min(0.12, fy * 0.2));
   const pupil = dead ? 0.1 + 1.1 * pow(1 - w.wait / (HZ * 2.6), 2) : w.hole ? 0.24 + 0.02 * S(t * 3) : 0.12 + 0.02 * S(t * 2.3);
 
   for (let j = 0, n = 0; j < H; j++) {
@@ -384,12 +406,19 @@ function main() {
     w.W = s.W; w.H = s.H;
     stdout.write('\x1b[2J');
   };
-  stdout.write('\x1b[22;0t\x1b[?1049h\x1b[?25l\x1b[?7l');
-  process.on('exit', () => stdout.write(`\x1b[0m\x1b[?7h\x1b[?25h\x1b[?1049l\x1b]0;\x07\x1b[23;0t${w.quit ? pick(OUT) + '\n' : ''}`));
+  stdout.write('\x1b[22;0t\x1b[?1049h\x1b[?25l\x1b[?7l\x1b[?1003h\x1b[?1006h');
+  process.on('exit', () => stdout.write(`\x1b[?1006l\x1b[?1003l\x1b[0m\x1b[?7h\x1b[?25h\x1b[?1049l\x1b]0;\x07\x1b[23;0t${w.quit ? pick(OUT) + '\n' : ''}`));
   for (const sig of ['SIGTERM', 'SIGHUP', 'SIGINT']) process.on(sig, () => process.exit(0));
   stdin.setRawMode(true);
   stdin.setEncoding('utf8');
-  stdin.on('data', data => { for (const k of data.match(/\x1b[[O][A-D]|[^]/g) || []) press(w, k.length === 1 ? k.toLowerCase() : k); });
+  let held = ''; // a sequence cut in two between reads; its lone ESC would otherwise read as q
+  stdin.on('data', data => {
+    data = held + data;
+    const cut = /\x1b\[(<[\d;]*)?$/.exec(data);
+    held = cut ? cut[0] : '';
+    if (cut) data = data.slice(0, cut.index);
+    for (const k of data.match(/\x1b\[<\d+;\d+;\d+[Mm]|\x1b[[O][A-D]|[^]/g) || []) press(w, k.length === 1 ? k.toLowerCase() : k);
+  });
   stdout.on('resize', size);
   size();
 
